@@ -1,100 +1,166 @@
 document.addEventListener("DOMContentLoaded", () => {
-    // Cache DOM elements
-    const inputDisplay = document.querySelector(".display-input");
-    const outputDisplay = document.querySelector(".display-output");
-    const calcButtons = document.querySelectorAll(".calculator button");
-  
-    // State variables
-    let currentInput = "";
-    let lastResult = "";
-    let degMode = false; // Default mode: radians
-  
-    // Helper: Update display fields
-    const updateDisplays = () => {
-      inputDisplay.textContent = currentInput || "0";
-    };
-  
-    // Setup custom mathjs functions for degree mode
-    const importTrigInDeg = () => {
-      math.import(
-        {
-          sin: function (x) {
-            return math.sin(math.unit(x, "deg"));
-          },
-          cos: function (x) {
-            return math.cos(math.unit(x, "deg"));
-          },
-          tan: function (x) {
-            return math.tan(math.unit(x, "deg"));
-          },
-          asin: function (x) {
-            return math.asin(x) * (180 / Math.PI);
-          },
-          acos: function (x) {
-            return math.acos(x) * (180 / Math.PI);
-          },
-          atan: function (x) {
-            return math.atan(x) * (180 / Math.PI);
-          }
-        },
-        { override: true }
-      );
-    };
-  
-    // Reset to default mathjs functions (radian mode)
-    const importTrigInRad = () => {
-      // Reload mathjs to reset any overrides (if needed)
-      // For simplicity, you may also keep track of mode and import only when switching modes.
-      // Here we assume that the default functions are in place when degMode is false.
-    };
-  
-    // Event handler for calculator buttons
-    calcButtons.forEach((button) => {
-      button.addEventListener("click", () => {
-        // Extract the visible button text. If the button contains an input (radio), ignore that part.
-        const btnText = button.childNodes.length > 1 ? button.childNodes[button.childNodes.length - 1].nodeValue.trim() : button.textContent.trim();
-  
-        // Handle special buttons based on their text content
-        if (btnText === "AC") {
-          currentInput = "";
-          outputDisplay.textContent = "0";
-        } else if (btnText === "Back") {
-          currentInput = currentInput.slice(0, -1);
-        } else if (btnText === "=") {
-          // Evaluate expression using mathjs with error handling.
-          try {
-            // Set trigonometric function mode based on the current mode.
-            if (degMode) {
-              importTrigInDeg();
-            } else {
-              importTrigInRad();
-            }
-  
-            // Evaluate the expression stored in currentInput.
-            const result = math.evaluate(currentInput);
-            outputDisplay.textContent = result;
-            lastResult = result;
-          } catch (error) {
-            outputDisplay.textContent = "Error";
-            console.error("Calculation error:", error);
-          }
-        } else if (btnText === "Ans") {
-          // Append the last result to the current input.
-          currentInput += lastResult;
-        } else if (btnText === "Deg") {
-          degMode = true;
-          // Optionally, visually indicate that degree mode is active.
-        } else if (btnText === "Rad") {
-          degMode = false;
-          // Optionally, visually indicate that radian mode is active.
-        } else {
-          // Append the button text to the current input.
-          currentInput += btnText;
-        }
-  
-        // Update the input display after handling the button click.
+  const inputDisplay = document.querySelector(".display-input");
+  const outputDisplay = document.querySelector(".display-output");
+  const calcButtons = document.querySelectorAll(".calculator button");
+
+  let currentInput = "";
+  let lastResult = "";
+  let degMode = false;
+
+  const updateDisplays = () => {
+    inputDisplay.textContent = currentInput || "0";
+  };
+
+  const importTrigInDeg = () => {
+    math.import(
+      {
+        sin: (x) => math.sin(math.unit(x, "deg")),
+        cos: (x) => math.cos(math.unit(x, "deg")),
+        tan: (x) => math.tan(math.unit(x, "deg")),
+        asin: (x) => math.asin(x) * (180 / Math.PI),
+        acos: (x) => math.acos(x) * (180 / Math.PI),
+        atan: (x) => math.atan(x) * (180 / Math.PI),
+      },
+      { override: true }
+    );
+  };
+
+  const importTrigInRad = () => {
+    math.import(
+      {
+        sin: Math.sin,
+        cos: Math.cos,
+        tan: Math.tan,
+        asin: Math.asin,
+        acos: Math.acos,
+        atan: Math.atan,
+      },
+      { override: true }
+    );
+  };
+
+  const specialMappings = {
+    π: "pi",
+    e: "e",
+    "x²": "^2",
+    "x³": "^3",
+    xʸ: "^(",
+    "√x": "sqrt(",
+    "3√x": "nthRoot(",
+    "y√x": "nthRoot(",
+    "1/x": "1/(",
+    "±": "-(",
+    EXP: "*10^(",
+    "sin⁻¹": "asin(",
+    "cos⁻¹": "acos(",
+    "tan⁻¹": "atan(",
+    ln: "log(",
+    log: "log10(",
+    "n!": "factorial(",
+    "%": "/100",
+    Ans: () => lastResult,
+    RND: () => Math.random().toFixed(5),
+  };
+
+  const autoWrapFunctions = (expression) => {
+    const functions = [
+      "sin",
+      "cos",
+      "tan",
+      "asin",
+      "acos",
+      "atan",
+      "sqrt",
+      "log10",
+      "log",
+      "factorial",
+      "nthRoot",
+    ];
+    for (let fn of functions) {
+      const regex = new RegExp(`${fn}(\\d+(\\.\\d+)?)`, "g");
+      expression = expression.replace(regex, `${fn}($1)`);
+    }
+    return expression;
+  };
+
+  const replaceMappings = (expression) => {
+    // Replace longer keys first (e.g. sin⁻¹ before sin)
+    const sortedKeys = Object.keys(specialMappings).sort(
+      (a, b) => b.length - a.length
+    );
+    for (let key of sortedKeys) {
+      const mapped =
+        typeof specialMappings[key] === "function"
+          ? specialMappings[key]()
+          : specialMappings[key];
+      expression = expression.split(key).join(mapped);
+    }
+    return expression;
+  };
+
+  const displayError = (msg = "Error") => {
+    outputDisplay.textContent = msg;
+    outputDisplay.style.color = "red";
+  };
+
+  calcButtons.forEach((button) => {
+    button.addEventListener("click", () => {
+      const btnText =
+        button.childNodes.length > 1
+          ? button.childNodes[button.childNodes.length - 1].nodeValue.trim()
+          : button.textContent.trim();
+
+      if (btnText === "AC") {
+        currentInput = "";
+        outputDisplay.textContent = "0";
+        outputDisplay.style.color = "white";
         updateDisplays();
-      });
+        return;
+      }
+
+      if (btnText === "Back") {
+        currentInput = currentInput.slice(0, -1);
+        updateDisplays();
+        return;
+      }
+
+      if (btnText === "Deg") {
+        degMode = true;
+        return;
+      }
+
+      if (btnText === "Rad") {
+        degMode = false;
+        return;
+      }
+
+      if (btnText === "=") {
+        try {
+          degMode ? importTrigInDeg() : importTrigInRad();
+          let expr = currentInput;
+          expr = replaceMappings(expr);
+          expr = autoWrapFunctions(expr);
+          const result = math.evaluate(expr);
+          outputDisplay.textContent = result;
+          outputDisplay.style.color = "white";
+          lastResult = result;
+        } catch (err) {
+          displayError("Invalid Expression");
+          console.error("Evaluation Error:", err);
+        }
+        return;
+      }
+
+      // Dynamic values like Ans, RND
+      if (typeof specialMappings[btnText] === "function") {
+        currentInput += specialMappings[btnText]();
+      } else if (specialMappings[btnText]) {
+        currentInput += specialMappings[btnText];
+      } else {
+        currentInput += btnText;
+      }
+
+      updateDisplays();
     });
   });
-  
+});
